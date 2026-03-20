@@ -7,6 +7,9 @@ import matplotlib.patches as mpatches
 import seaborn as sns
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_absolute_error
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.model_selection import cross_val_score
 import warnings
 warnings.filterwarnings("ignore")
 import plotly.graph_objects as go
@@ -25,6 +28,22 @@ st.set_page_config(
     initial_sidebar_state="expanded",
     menu_items={}
 )
+
+# AUTH credentials
+USERS = {
+    "admin":    "admin123",
+    "analyst":  "data2026",
+    "intern":   "intern@123",
+    "spoorthy": "spoorthy",
+}
+
+def do_login(u, p):
+    return USERS.get(u.strip()) == p.strip()
+
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+if "username" not in st.session_state:
+    st.session_state["username"] = ""
 
 st.markdown("""
 <style>
@@ -500,6 +519,44 @@ hr { border-color: var(--border) !important; }
   color: var(--accent);
 }
 
+/* ── Login Page ── */
+.login-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 3rem 2.8rem 2.5rem;
+  max-width: 420px;
+  width: 100%;
+  margin: 6rem auto 0;
+  animation: fadeSlideUp 0.5s ease both;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+}
+.login-logo { font-size: 2.8rem; text-align:center; display:block; margin-bottom:0.4rem; }
+.login-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.6rem; font-weight: 800; text-align: center;
+  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #f472b6 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  margin-bottom: 0.2rem;
+}
+.login-sub { text-align:center; color:var(--muted); font-size:0.85rem; margin-bottom:2rem; }
+.login-label {
+  font-size: 0.78rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--muted); margin-bottom: 0.4rem; display: block;
+}
+.login-error {
+  background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.35);
+  border-radius: 10px; padding: 0.75rem 1rem; color: #f87171;
+  font-size: 0.85rem; margin-top: 1rem; text-align: center;
+}
+.login-footer { text-align:center; font-size:0.72rem; color:var(--muted); margin-top:1.5rem; }
+.user-badge {
+  background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.2);
+  border-radius: 10px; padding: 0.6rem 0.9rem; margin-bottom: 0.5rem;
+  font-size: 0.82rem; color: var(--text);
+}
+.user-badge span { color: var(--accent); font-weight: 600; }
+
 /* ── Caption / footer ── */
 .app-footer {
   text-align: center;
@@ -561,6 +618,49 @@ DANGER  = "#f87171"
 MUTED   = "#64748b"
 TEXT    = "#e2e8f0"
 
+# ══════════════════════════════════════════════
+# LOGIN PAGE
+# ══════════════════════════════════════════════
+def show_login():
+    st.markdown(
+        "<style>[data-testid='stSidebar']{display:none!important}"
+        ".block-container{max-width:500px!important;padding-top:3rem!important}</style>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "<div class=\"login-card\">"
+        "<span class=\"login-logo\">💹</span>"
+        "<div class=\"login-title\">RevAnalyzer</div>"
+        "<p class=\"login-sub\">Revenue Target Feasibility Analyzer<br>Sign in to continue</p>"
+        "</div>",
+        unsafe_allow_html=True
+    )
+    with st.form("login_form", clear_on_submit=False):
+        st.markdown("<span class=\"login-label\">Username</span>", unsafe_allow_html=True)
+        username = st.text_input("u", placeholder="Enter username", label_visibility="collapsed")
+        st.markdown("<span class=\"login-label\" style=\"margin-top:0.8rem;display:block\">Password</span>", unsafe_allow_html=True)
+        password = st.text_input("p", placeholder="Enter password", type="password", label_visibility="collapsed")
+        st.markdown("<div style=\"margin-top:1rem\"></div>", unsafe_allow_html=True)
+        submitted = st.form_submit_button("Sign In  →", use_container_width=True)
+        if submitted:
+            if do_login(username, password):
+                st.session_state["logged_in"] = True
+                st.session_state["username"]  = username.strip()
+                st.rerun()
+            else:
+                st.markdown(
+                    "<div class=\"login-error\">❌ &nbsp; Invalid username or password.</div>",
+                    unsafe_allow_html=True
+                )
+    st.markdown(
+        "<div class=\"login-footer\">Built with Streamlit &nbsp;·&nbsp; Data processed locally &nbsp;·&nbsp; Private</div>",
+        unsafe_allow_html=True
+    )
+
+if not st.session_state["logged_in"]:
+    show_login()
+    st.stop()
+
 def style_fig(fig, axes=None):
     fig.patch.set_facecolor(SURFACE)
     fig.patch.set_alpha(0.0)
@@ -609,7 +709,14 @@ with st.sidebar:
     page = st.radio("", ["🏠  Dashboard", "🔎  EDA", "📥  Download Report"], label_visibility="collapsed")
 
     st.markdown('<hr class="sidebar-divider">', unsafe_allow_html=True)
-    st.markdown('<div style="font-size:0.72rem;color:#475569;line-height:1.6">Built with Streamlit<br>Data processed locally · Private</div>', unsafe_allow_html=True)
+    uname = st.session_state.get("username", "")
+    st.markdown(f'<div class="user-badge">👤 Signed in as <span>{uname}</span></div>', unsafe_allow_html=True)
+    if st.button("🚪  Sign Out", use_container_width=True):
+        for k in ["logged_in","username","target","forecast_period","predicted_total"]:
+            st.session_state.pop(k, None)
+        st.session_state["logged_in"] = False
+        st.rerun()
+    st.markdown('<div style="font-size:0.72rem;color:#475569;line-height:1.6;margin-top:0.5rem">Built with Streamlit<br>Data processed locally · Private</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════
 # LANDING — no file uploaded
@@ -643,11 +750,56 @@ if not uploaded_file:
 @st.cache_data
 def load_data(file):
     df = pd.read_csv(file, encoding='latin1')
+
+    # ── Auto Column Mapper ─────────────────────────
+    # Normalize all column names to strip spaces and lower for matching
+    col_map = {c.lower().strip().replace(" ", "").replace("_", ""): c for c in df.columns}
+
+    def find_col(candidates):
+        for c in candidates:
+            key = c.lower().replace(" ", "").replace("_", "")
+            if key in col_map:
+                return col_map[key]
+        return None
+
+    # Map to standard names
+    rename = {}
+    date_col   = find_col(["Order Date", "OrderDate", "Date", "order_date", "InvoiceDate", "date", "Trans Date"])
+    sales_col  = find_col(["Sales", "Revenue", "Amount", "Total", "Sale Amount", "GrossRevenue", "amount", "sales"])
+    profit_col = find_col(["Profit", "Margin", "Net Profit", "profit", "NetProfit", "GrossProfit"])
+    orderid    = find_col(["Order ID", "OrderID", "Order_ID", "InvoiceNo", "Transaction ID", "order_id", "id"])
+    cat_col    = find_col(["Category", "category", "Product Category", "Type", "Segment", "Department"])
+    region_col = find_col(["Region", "region", "State", "City", "Location", "Geography", "Country"])
+
+    if date_col   and date_col   != "Order Date":   rename[date_col]   = "Order Date"
+    if sales_col  and sales_col  != "Sales":         rename[sales_col]  = "Sales"
+    if profit_col and profit_col != "Profit":        rename[profit_col] = "Profit"
+    if orderid    and orderid    != "Order ID":      rename[orderid]    = "Order ID"
+    if cat_col    and cat_col    != "Category":      rename[cat_col]    = "Category"
+    if region_col and region_col != "Region":        rename[region_col] = "Region"
+
+    if rename:
+        df = df.rename(columns=rename)
+
+    # Add missing required columns with defaults
+    if "Order ID" not in df.columns:
+        df["Order ID"] = range(1, len(df) + 1)
+    if "Profit" not in df.columns:
+        df["Profit"] = df["Sales"] * 0.15 if "Sales" in df.columns else 0
+    if "Category" not in df.columns:
+        df["Category"] = "General"
+    if "Region" not in df.columns:
+        df["Region"] = "Unknown"
+
+    # ── Clean ─────────────────────────────────────
     df['Order Date'] = pd.to_datetime(df['Order Date'], errors='coerce')
+    df['Sales']      = pd.to_numeric(df['Sales'], errors='coerce')
+    df['Profit']     = pd.to_numeric(df['Profit'], errors='coerce')
     df = df.drop_duplicates()
-    df = df.dropna(subset=['Order Date', 'Sales', 'Profit'])
-    df['Month'] = df['Order Date'].dt.to_period('M')
-    df['Year']  = df['Order Date'].dt.year
+    df = df.dropna(subset=['Order Date', 'Sales'])
+    df['Profit']     = df['Profit'].fillna(df['Sales'] * 0.15)
+    df['Month']      = df['Order Date'].dt.to_period('M')
+    df['Year']       = df['Order Date'].dt.year
     return df
 
 df = load_data(uploaded_file)
@@ -680,6 +832,50 @@ if page == "🏠  Dashboard":
         c3.metric("Date Range",      f"{df['Order Date'].min().strftime('%b %Y')} → {df['Order Date'].max().strftime('%b %Y')}")
         st.dataframe(df.head(8), use_container_width=True)
 
+    # ── Data Quality Score ────────────────────────
+    total_rows      = len(df)
+    missing_pct     = df.isnull().mean().mean() * 100
+    dup_pct         = (df.duplicated().sum() / max(total_rows, 1)) * 100
+    months_covered  = monthly_revenue["Month"].nunique()
+    date_gaps       = months_covered / max((df['Order Date'].max() - df['Order Date'].min()).days / 30, 1) * 100
+    date_gap_score  = min(date_gaps, 100)
+
+    missing_score   = max(0, 100 - missing_pct * 5)
+    dup_score       = max(0, 100 - dup_pct * 5)
+    size_score      = min(100, (total_rows / 1000) * 50 + 50)
+    quality_score   = int((missing_score * 0.35) + (dup_score * 0.25) + (size_score * 0.2) + (date_gap_score * 0.2))
+
+    q_color  = "#34d399" if quality_score >= 80 else ("#fbbf24" if quality_score >= 55 else "#f87171")
+    q_label  = "Excellent" if quality_score >= 80 else ("Good" if quality_score >= 55 else "Needs Improvement")
+    q_bar    = quality_score
+
+    section("🔬", "Data Quality Score")
+    st.markdown(
+        f"<div style='background:var(--card);border:1px solid var(--border);border-radius:16px;"
+        f"padding:1.4rem 1.8rem;margin-bottom:1.5rem'>"
+        f"<div style='display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1rem'>"
+        f"<div>"
+        f"<div style='font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:0.3rem'>Dataset Health</div>"
+        f"<div style='font-family:Syne,sans-serif;font-size:2.2rem;font-weight:800;color:{q_color}'>{quality_score}%</div>"
+        f"<div style='font-size:0.85rem;color:{q_color};font-weight:600'>{q_label}</div>"
+        f"</div>"
+        f"<div style='display:flex;gap:1.5rem;flex-wrap:wrap'>"
+        f"<div style='text-align:center'><div style='font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em'>Missing Values</div>"
+        f"<div style='font-family:Syne,sans-serif;font-size:1.1rem;font-weight:700;color:{'#34d399' if missing_pct < 5 else '#f87171'}'>{missing_pct:.1f}%</div></div>"
+        f"<div style='text-align:center'><div style='font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em'>Duplicates</div>"
+        f"<div style='font-family:Syne,sans-serif;font-size:1.1rem;font-weight:700;color:{'#34d399' if dup_pct < 2 else '#f87171'}'>{dup_pct:.1f}%</div></div>"
+        f"<div style='text-align:center'><div style='font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em'>Total Rows</div>"
+        f"<div style='font-family:Syne,sans-serif;font-size:1.1rem;font-weight:700;color:var(--accent)'>{total_rows:,}</div></div>"
+        f"<div style='text-align:center'><div style='font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em'>Months Covered</div>"
+        f"<div style='font-family:Syne,sans-serif;font-size:1.1rem;font-weight:700;color:var(--accent)'>{months_covered}</div></div>"
+        f"</div></div>"
+        f"<div style='background:var(--border);border-radius:999px;height:8px;overflow:hidden'>"
+        f"<div style='background:{q_color};width:{q_bar}%;height:100%;border-radius:999px;"
+        f"transition:width 0.8s ease'></div></div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
     # ── KPIs ─────────────────────────────────────
     total_sales   = df["Sales"].sum()
     total_profit  = df["Profit"].sum()
@@ -699,7 +895,7 @@ if page == "🏠  Dashboard":
     """, unsafe_allow_html=True)
 
     # ── Forecasting ───────────────────────────────
-    section("🤖", "Revenue Forecasting — Linear Regression")
+    section("🤖", "Revenue Forecasting — ML Pipeline")
 
     col_sl, _ = st.columns([1, 2])
     with col_sl:
@@ -707,16 +903,21 @@ if page == "🏠  Dashboard":
 
     X = monthly_revenue[["Time_Index"]]
     y = monthly_revenue["Sales"]
-    model = LinearRegression()
-    model.fit(X, y)
-    y_pred_hist  = model.predict(X)
+
+    # ── Scikit-learn Pipeline ──────────────────────
+    revenue_pipeline = Pipeline([
+        ("poly",      PolynomialFeatures(degree=1, include_bias=False)),
+        ("scaler",    StandardScaler()),
+        ("regressor", LinearRegression())
+    ])
+    revenue_pipeline.fit(X, y)
+    y_pred_hist  = revenue_pipeline.predict(X)
     r2           = r2_score(y, y_pred_hist)
     mae          = mean_absolute_error(y, y_pred_hist)
     future_index = np.arange(len(monthly_revenue), len(monthly_revenue) + forecast_period).reshape(-1,1)
-    predictions  = np.clip(model.predict(future_index), 0, None)
+    predictions  = np.clip(revenue_pipeline.predict(future_index), 0, None)
     residuals    = y.values - y_pred_hist
     std_res      = np.std(residuals)
-    # Fixed confidence level at 95%
     z            = 1.96
     lower        = predictions - z * std_res
     upper        = predictions + z * std_res
@@ -724,13 +925,43 @@ if page == "🏠  Dashboard":
     st.session_state['forecast_period'] = forecast_period
     st.session_state['predicted_total'] = predicted_total
 
-    # Model pill — only forecast months, no R² or MAE
-    st.markdown(f"""
-    <div style="display:flex;gap:0.75rem;margin-bottom:1.2rem;flex-wrap:wrap">
-      <span class="pill">🧠 Linear Regression</span>
-      <span class="pill">Forecast = {forecast_period} months</span>
-    </div>
-    """, unsafe_allow_html=True)
+    # Cross-validation score
+    cv_scores = cross_val_score(revenue_pipeline, X, y, cv=min(3, len(X)), scoring='r2')
+    cv_mean   = cv_scores.mean()
+    cv_color  = "#34d399" if cv_mean > 0.7 else ("#fbbf24" if cv_mean > 0.4 else "#f87171")
+    cv_label  = "Good fit" if cv_mean > 0.7 else ("Moderate fit" if cv_mean > 0.4 else "Weak fit")
+
+    # ── Pipeline Flowchart ────────────────────────
+    st.markdown(
+        "<div style='margin:1rem 0 1.2rem;overflow-x:auto'>"
+        "<div style='display:flex;align-items:center;gap:0;min-width:max-content;padding:0.2rem 0'>"
+        "<div style='background:#0d1117;border:1px solid #38bdf8;border-radius:10px;padding:0.55rem 1rem;font-size:0.78rem;color:#38bdf8;font-weight:600;font-family:Syne,sans-serif;white-space:nowrap'>📂 Load CSV</div>"
+        "<div style='color:#334155;font-size:1rem;margin:0 0.3rem'>──▶</div>"
+        "<div style='background:#0d1117;border:1px solid #818cf8;border-radius:10px;padding:0.55rem 1rem;font-size:0.78rem;color:#818cf8;font-weight:600;font-family:Syne,sans-serif;white-space:nowrap'>🧹 Clean Data</div>"
+        "<div style='color:#334155;font-size:1rem;margin:0 0.3rem'>──▶</div>"
+        "<div style='background:#0d1117;border:1px solid #f472b6;border-radius:10px;padding:0.55rem 1rem;font-size:0.78rem;color:#f472b6;font-weight:600;font-family:Syne,sans-serif;white-space:nowrap'>🔢 PolynomialFeatures</div>"
+        "<div style='color:#334155;font-size:1rem;margin:0 0.3rem'>──▶</div>"
+        "<div style='background:#0d1117;border:1px solid #fbbf24;border-radius:10px;padding:0.55rem 1rem;font-size:0.78rem;color:#fbbf24;font-weight:600;font-family:Syne,sans-serif;white-space:nowrap'>📐 StandardScaler</div>"
+        "<div style='color:#334155;font-size:1rem;margin:0 0.3rem'>──▶</div>"
+        "<div style='background:#0d1117;border:1px solid #38bdf8;border-radius:10px;padding:0.55rem 1rem;font-size:0.78rem;color:#38bdf8;font-weight:600;font-family:Syne,sans-serif;white-space:nowrap'>🤖 LinearRegression</div>"
+        "<div style='color:#334155;font-size:1rem;margin:0 0.3rem'>──▶</div>"
+        "<div style='background:#0d1117;border:1px solid #34d399;border-radius:10px;padding:0.55rem 1rem;font-size:0.78rem;color:#34d399;font-weight:600;font-family:Syne,sans-serif;white-space:nowrap'>🎯 Feasibility Verdict</div>"
+        "</div></div>",
+        unsafe_allow_html=True
+    )
+
+    # ── Pipeline pills ────────────────────────────
+    st.markdown(
+        f"<div style='display:flex;gap:0.75rem;margin-bottom:1.2rem;flex-wrap:wrap;align-items:center'>"
+        f"<span class='pill'>🧠 Sklearn Pipeline</span>"
+        f"<span class='pill'>📐 StandardScaler</span>"
+        f"<span class='pill'>🔢 PolynomialFeatures</span>"
+        f"<span class='pill'>Forecast = {forecast_period} months</span>"
+        f"<span class='pill' style='color:{cv_color};border-color:{cv_color}33;background:{cv_color}11'>"
+        f"CV R² = {cv_mean:.3f} — {cv_label}</span>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
     # Forecast chart — Interactive Plotly with hover tooltips
     hist_x      = monthly_revenue["Time_Index"].values
@@ -918,6 +1149,84 @@ if page == "🏠  Dashboard":
         fig_g.tight_layout(pad=1.2)
         st.pyplot(fig_g, use_container_width=True)
 
+        # ── What-If Scenario Simulator ────────────────
+        st.markdown("<div style='margin:2rem 0 0'></div>", unsafe_allow_html=True)
+        section("🔮", "What-If Scenario Simulator")
+        st.markdown(
+            "<div style='font-size:0.88rem;color:var(--muted);margin-bottom:1rem'>"
+            "Adjust growth assumptions below to see how they change your forecast and feasibility verdict in real time."
+            "</div>",
+            unsafe_allow_html=True
+        )
+
+        wa, wb = st.columns(2)
+        with wa:
+            growth_rate = st.slider(
+                "Monthly Sales Growth (%)",
+                min_value=-20, max_value=50, value=0, step=1,
+                help="Simulate what happens if sales grow or decline each month"
+            )
+        with wb:
+            cost_change = st.slider(
+                "Cost Reduction (%)",
+                min_value=-20, max_value=30, value=0, step=1,
+                help="Simulate the effect of reducing costs (improves profit margin)"
+            )
+
+        # Apply growth to predictions
+        growth_multipliers  = np.array([(1 + growth_rate / 100) ** (i + 1) for i in range(forecast_period)])
+        adjusted_preds      = predictions * growth_multipliers
+        adjusted_total      = float(adjusted_preds.sum())
+        adjusted_margin     = profit_margin * (1 + cost_change / 100)
+        adjusted_profit     = total_profit * (1 + cost_change / 100)
+
+        # Recalculate feasibility
+        adj_score   = (adjusted_total / target * 100)
+        adj_gap     = adjusted_total - target
+        adj_gap_pct = (adj_gap / target * 100)
+
+        if adj_score >= 100:
+            adj_verdict = "ACHIEVABLE"
+            adj_vcolor  = "#34d399"
+            adj_icon    = "✅"
+        elif adj_score >= 80:
+            adj_verdict = "CHALLENGING"
+            adj_vcolor  = "#fbbf24"
+            adj_icon    = "⚠️"
+        else:
+            adj_verdict = "UNREALISTIC"
+            adj_vcolor  = "#f87171"
+            adj_icon    = "❌"
+
+        # Show comparison
+        wc1, wc2, wc3, wc4 = st.columns(4)
+        wc1.metric("Adjusted Forecast",  f"${adjusted_total:,.0f}",
+                   delta=f"${adjusted_total - predicted_total:+,.0f} vs base")
+        wc2.metric("Adjusted Margin",    f"{adjusted_margin:.1f}%",
+                   delta=f"{adjusted_margin - profit_margin:+.1f}%")
+        wc3.metric("Feasibility Score",  f"{adj_score:.1f}%",
+                   delta=f"{adj_score - feasibility_score:+.1f}% vs base")
+        wc4.metric("Gap to Target",      f"${adj_gap:+,.0f}",
+                   delta=f"{adj_gap_pct:+.1f}%",
+                   delta_color="normal" if adj_gap >= 0 else "inverse")
+
+        st.markdown("<div style='margin:0.8rem 0'></div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='background:{'rgba(52,211,153,0.08)' if adj_verdict=='ACHIEVABLE' else ('rgba(251,191,36,0.08)' if adj_verdict=='CHALLENGING' else 'rgba(248,113,113,0.08)')};"
+            f"border:1px solid {adj_vcolor}55;border-radius:12px;padding:1rem 1.4rem;"
+            f"display:flex;align-items:center;gap:0.75rem'>"
+            f"<span style='font-size:1.3rem'>{adj_icon}</span>"
+            f"<div>"
+            f"<div style='font-family:Syne,sans-serif;font-size:1rem;font-weight:700;color:{adj_vcolor}'>"
+            f"With {growth_rate:+d}% monthly growth & {cost_change:+d}% cost change — Target is {adj_verdict}"
+            f"</div>"
+            f"<div style='font-size:0.82rem;color:var(--muted);margin-top:0.2rem'>"
+            f"Adjusted forecast: ${adjusted_total:,.0f} vs target: ${target:,.0f} &nbsp;|&nbsp; Gap: ${adj_gap:+,.0f}"
+            f"</div>"
+            f"</div></div>",
+            unsafe_allow_html=True
+        )
+
     else:
         st.markdown("""
         <div style="background:rgba(56,189,248,0.05);border:1px dashed rgba(56,189,248,0.2);
@@ -1097,9 +1406,15 @@ elif page == "📥  Download Report":
     mr["Time_Index"] = np.arange(len(mr))
     X_r = mr[["Time_Index"]]
     y_r = mr["Sales"]
-    from sklearn.linear_model import LinearRegression
-    mdl = LinearRegression()
-    mdl.fit(X_r, y_r)
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+    mr_pipeline = Pipeline([
+        ("poly",      PolynomialFeatures(degree=1, include_bias=False)),
+        ("scaler",    StandardScaler()),
+        ("regressor", LinearRegression())
+    ])
+    mr_pipeline.fit(X_r, y_r)
+    mdl = mr_pipeline
     best_month  = mr.loc[mr["Sales"].idxmax(), "Month"]
     worst_month = mr.loc[mr["Sales"].idxmin(), "Month"]
     top_cat     = df.groupby("Category")["Sales"].sum().idxmax()
@@ -1227,7 +1542,7 @@ elif page == "📥  Download Report":
             📈 <strong>Best Month:</strong> {best_month} | 📉 <strong>Worst Month:</strong> {worst_month}
           </div>
           <div style="background:#0d1117;border-radius:8px;padding:0.7rem 1rem;font-size:0.85rem;color:var(--text)">
-            🤖 <strong>Model:</strong> Linear Regression | Trend slope: ${mdl.coef_[0]:,.0f}/month
+            🤖 <strong>Model:</strong> Linear Regression | Trend slope: ${mdl.named_steps['regressor'].coef_[0]:,.0f}/month
           </div>
         </div>
       </div>
@@ -1346,7 +1661,7 @@ elif page == "📥  Download Report":
             f"Top Category: {top_cat} contributes {top_cat_share:.1f}% of total revenue",
             f"Strongest Region: {top_region} leads in revenue performance",
             f"Best Month: {best_month}  |  Worst Month: {worst_month}",
-            f"Trend: ${mdl.coef_[0]:,.0f} increase in revenue per month (Linear Regression)",
+            f"Trend: ${mdl.named_steps['regressor'].coef_[0]:,.0f} increase per month (ML Pipeline)",
             f"Overall Profit Margin: {profit_margin:.1f}% - {health}",
         ]
         H(10)
