@@ -29,21 +29,69 @@ st.set_page_config(
     menu_items={}
 )
 
-# AUTH credentials
-USERS = {
-    "admin":    "admin123",
-    "analyst":  "data2026",
-    "intern":   "intern@123",
-    "spoorthy": "spoorthy",
-}
+# AUTH — file-based user store (no hardcoded credentials)
+import hashlib, json, os
+
+USERS_FILE = "users.json"
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f)
+
+def hash_pw(pw):
+    return hashlib.sha256(pw.strip().encode()).hexdigest()
 
 def do_login(u, p):
-    return USERS.get(u.strip()) == p.strip()
+    users = load_users()
+    return users.get(u.strip()) == hash_pw(p)
+
+def do_register(u, p):
+    users = load_users()
+    if u.strip() in users:
+        return False, "Username already exists."
+    if len(u.strip()) < 3:
+        return False, "Username must be at least 3 characters."
+    if len(p.strip()) < 4:
+        return False, "Password must be at least 4 characters."
+    users[u.strip()] = hash_pw(p)
+    save_users(users)
+    return True, "Account created successfully!"
+
+# Activity log functions
+ACTIVITY_FILE = "activity_log.json"
+
+def load_activity():
+    if os.path.exists(ACTIVITY_FILE):
+        with open(ACTIVITY_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_activity(log):
+    with open(ACTIVITY_FILE, "w") as f:
+        json.dump(log, f)
+
+def log_login(username):
+    log = load_activity()
+    if username not in log:
+        log[username] = {"login_count": 0, "last_login": "", "sessions": []}
+    log[username]["login_count"] += 1
+    log[username]["last_login"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
+    log[username]["sessions"].append(datetime.now().strftime("%d %b %Y, %I:%M %p"))
+    log[username]["sessions"] = log[username]["sessions"][-10:]  # keep last 10
+    save_activity(log)
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "username" not in st.session_state:
     st.session_state["username"] = ""
+if "auth_tab" not in st.session_state:
+    st.session_state["auth_tab"] = "login"  ""
 
 st.markdown("""
 <style>
@@ -624,34 +672,96 @@ TEXT    = "#e2e8f0"
 def show_login():
     st.markdown(
         "<style>[data-testid='stSidebar']{display:none!important}"
-        ".block-container{max-width:500px!important;padding-top:3rem!important}</style>",
+        ".block-container{max-width:480px!important;padding-top:2rem!important}</style>",
         unsafe_allow_html=True
     )
     st.markdown(
-        "<div class=\"login-card\">"
-        "<span class=\"login-logo\">💹</span>"
-        "<div class=\"login-title\">RevAnalyzer</div>"
-        "<p class=\"login-sub\">Revenue Target Feasibility Analyzer<br>Sign in to continue</p>"
+        "<div style='text-align:center;margin-bottom:1.5rem'>"
+        "<span style='font-size:2.8rem'>💹</span>"
+        "<div style='font-family:Syne,sans-serif;font-size:1.6rem;font-weight:800;"
+        "background:linear-gradient(135deg,#38bdf8,#818cf8,#f472b6);"
+        "-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text'>"
+        "RevAnalyzer</div>"
+        "<div style='color:#64748b;font-size:0.85rem;margin-top:0.2rem'>"
+        "Revenue Target Feasibility Analyzer</div>"
         "</div>",
         unsafe_allow_html=True
     )
-    with st.form("login_form", clear_on_submit=False):
-        st.markdown("<span class=\"login-label\">Username</span>", unsafe_allow_html=True)
-        username = st.text_input("u", placeholder="Enter username", label_visibility="collapsed")
-        st.markdown("<span class=\"login-label\" style=\"margin-top:0.8rem;display:block\">Password</span>", unsafe_allow_html=True)
-        password = st.text_input("p", placeholder="Enter password", type="password", label_visibility="collapsed")
-        st.markdown("<div style=\"margin-top:1rem\"></div>", unsafe_allow_html=True)
-        submitted = st.form_submit_button("Sign In  →", use_container_width=True)
-        if submitted:
-            if do_login(username, password):
-                st.session_state["logged_in"] = True
-                st.session_state["username"]  = username.strip()
-                st.rerun()
-            else:
-                st.markdown(
-                    "<div class=\"login-error\">❌ &nbsp; Invalid username or password.</div>",
-                    unsafe_allow_html=True
-                )
+
+    # Tab switcher
+    tab_col1, tab_col2 = st.columns(2)
+    with tab_col1:
+        if st.button("🔑  Sign In", use_container_width=True,
+                     type="primary" if st.session_state["auth_tab"] == "login" else "secondary"):
+            st.session_state["auth_tab"] = "login"
+            st.rerun()
+    with tab_col2:
+        if st.button("📝  Create Account", use_container_width=True,
+                     type="primary" if st.session_state["auth_tab"] == "register" else "secondary"):
+            st.session_state["auth_tab"] = "register"
+            st.rerun()
+
+    st.markdown("<div style='margin:0.8rem 0'></div>", unsafe_allow_html=True)
+
+    if st.session_state["auth_tab"] == "login":
+        # ── LOGIN FORM ──
+        with st.form("login_form", clear_on_submit=False):
+            st.markdown("<span class=\"login-label\">Username</span>", unsafe_allow_html=True)
+            username = st.text_input("lu", placeholder="Enter your username", label_visibility="collapsed")
+            st.markdown("<span class=\"login-label\" style=\"margin-top:0.8rem;display:block\">Password</span>", unsafe_allow_html=True)
+            password = st.text_input("lp", placeholder="Enter your password", type="password", label_visibility="collapsed")
+            st.markdown("<div style='margin-top:1rem'></div>", unsafe_allow_html=True)
+            submitted = st.form_submit_button("Sign In  →", use_container_width=True)
+            if submitted:
+                if not username.strip() or not password.strip():
+                    st.markdown("<div class=\"login-error\">❌ &nbsp; Please enter username and password.</div>", unsafe_allow_html=True)
+                elif do_login(username, password):
+                    st.session_state["logged_in"] = True
+                    st.session_state["username"]  = username.strip()
+                    log_login(username.strip())
+                    st.rerun()
+                else:
+                    users = load_users()
+                    if username.strip() not in users:
+                        st.markdown("<div class=\"login-error\">❌ &nbsp; Username not found. Please create an account.</div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown("<div class=\"login-error\">❌ &nbsp; Incorrect password. Try again.</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div style='text-align:center;font-size:0.8rem;color:#475569;margin-top:0.8rem'>"
+            "Don't have an account? Click <strong style='color:#38bdf8'>Create Account</strong> above.</div>",
+            unsafe_allow_html=True
+        )
+
+    else:
+        # ── REGISTER FORM ──
+        with st.form("register_form", clear_on_submit=True):
+            st.markdown("<span class=\"login-label\">Choose a Username</span>", unsafe_allow_html=True)
+            new_user = st.text_input("ru", placeholder="Min. 3 characters", label_visibility="collapsed")
+            st.markdown("<span class=\"login-label\" style=\"margin-top:0.8rem;display:block\">Choose a Password</span>", unsafe_allow_html=True)
+            new_pass = st.text_input("rp", placeholder="Min. 4 characters", type="password", label_visibility="collapsed")
+            st.markdown("<span class=\"login-label\" style=\"margin-top:0.8rem;display:block\">Confirm Password</span>", unsafe_allow_html=True)
+            confirm_pass = st.text_input("cp", placeholder="Re-enter password", type="password", label_visibility="collapsed")
+            st.markdown("<div style='margin-top:1rem'></div>", unsafe_allow_html=True)
+            reg_submitted = st.form_submit_button("Create Account  →", use_container_width=True)
+            if reg_submitted:
+                if not new_user.strip() or not new_pass.strip():
+                    st.markdown("<div class=\"login-error\">❌ &nbsp; Please fill all fields.</div>", unsafe_allow_html=True)
+                elif new_pass != confirm_pass:
+                    st.markdown("<div class=\"login-error\">❌ &nbsp; Passwords do not match.</div>", unsafe_allow_html=True)
+                else:
+                    success, msg = do_register(new_user, new_pass)
+                    if success:
+                        st.success(f"✅ {msg} Please sign in.")
+                        st.session_state["auth_tab"] = "login"
+                        st.rerun()
+                    else:
+                        st.markdown(f"<div class=\"login-error\">❌ &nbsp; {msg}</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div style='text-align:center;font-size:0.8rem;color:#475569;margin-top:0.8rem'>"
+            "Already have an account? Click <strong style='color:#38bdf8'>Sign In</strong> above.</div>",
+            unsafe_allow_html=True
+        )
+
     st.markdown(
         "<div class=\"login-footer\">Built with Streamlit &nbsp;·&nbsp; Data processed locally &nbsp;·&nbsp; Private</div>",
         unsafe_allow_html=True
@@ -706,7 +816,7 @@ with st.sidebar:
 
     st.markdown('<hr class="sidebar-divider">', unsafe_allow_html=True)
     st.markdown("**🗂️ Pages**")
-    page = st.radio("", ["🏠  Dashboard", "🔎  EDA", "📥  Download Report"], label_visibility="collapsed")
+    page = st.radio("", ["🏠  Dashboard", "📊  Sales Analytics", "📥  Download Report", "👤  Activity Log"], label_visibility="collapsed")
 
     st.markdown('<hr class="sidebar-divider">', unsafe_allow_html=True)
     uname = st.session_state.get("username", "")
@@ -1227,6 +1337,175 @@ if page == "🏠  Dashboard":
             unsafe_allow_html=True
         )
 
+        # ── Target Tracking Timeline ──────────────────
+        st.markdown("<div style='margin:2rem 0 0'></div>", unsafe_allow_html=True)
+        section("📅", "Target Tracking Timeline")
+        st.markdown(
+            "<div style='font-size:0.88rem;color:var(--muted);margin-bottom:1rem'>"
+            "Month-by-month forecast vs your target — see exactly when you are on track and when you fall short."
+            "</div>", unsafe_allow_html=True
+        )
+
+        target_line   = [target / forecast_period] * forecast_period
+        cumulative_fc = np.cumsum(predictions)
+        cumulative_tg = np.cumsum(target_line)
+        hit_month     = next((i+1 for i, v in enumerate(cumulative_fc) if v >= target), None)
+
+        fig_tt = go.Figure()
+        fig_tt.add_trace(go.Scatter(
+            x=fut_labels, y=list(cumulative_tg),
+            mode='lines', name='Cumulative Target',
+            line=dict(color=WARN, width=2, dash='dash'),
+            hovertemplate='<b>%{x}</b><br>Target: <b>$%{y:,.0f}</b><extra></extra>'
+        ))
+        fig_tt.add_trace(go.Scatter(
+            x=fut_labels, y=list(cumulative_fc),
+            mode='lines+markers', name='Cumulative Forecast',
+            line=dict(color=ACCENT, width=2.5),
+            marker=dict(
+                size=8, color=[ACCENT3 if v >= t else DANGER
+                               for v, t in zip(cumulative_fc, cumulative_tg)],
+                symbol='circle'
+            ),
+            hovertemplate='<b>%{x}</b><br>Forecast: <b>$%{y:,.0f}</b><extra></extra>'
+        ))
+        if hit_month:
+            fig_tt.add_vline(
+                x=fut_labels[hit_month-1],
+                line_width=1.5, line_dash="dot", line_color=ACCENT3,
+                annotation_text=f"Target Hit at M+{hit_month}",
+                annotation_font_color=ACCENT3, annotation_font_size=10
+            )
+        fig_tt.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor=CARD,
+            font=dict(family='DM Sans', color=TEXT, size=11),
+            height=280, margin=dict(l=60, r=30, t=30, b=40),
+            legend=dict(bgcolor=CARD, bordercolor=BORDER, borderwidth=1,
+                        font=dict(size=11, color=TEXT), orientation='h',
+                        yanchor='bottom', y=1.02, xanchor='left', x=0),
+            hovermode='x unified',
+            hoverlabel=dict(bgcolor='#1e293b', bordercolor=ACCENT,
+                            font=dict(family='DM Sans', size=12, color=TEXT)),
+            xaxis=dict(showgrid=False, color=MUTED, tickfont=dict(size=10, color=MUTED), linecolor=BORDER),
+            yaxis=dict(showgrid=True, gridcolor=BORDER, gridwidth=0.6, color=MUTED,
+                       tickfont=dict(size=10, color=MUTED), linecolor=BORDER,
+                       tickprefix='$', tickformat=',.0f')
+        )
+        st.plotly_chart(fig_tt, use_container_width=True)
+
+        if hit_month:
+            st.markdown(
+                f"<div style='background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.3);"
+                f"border-radius:10px;padding:0.8rem 1.2rem;font-size:0.88rem;color:#34d399'>"
+                f"✅ Based on forecast, cumulative revenue will hit <strong>${target:,.0f}</strong> "
+                f"by <strong>Month +{hit_month}</strong> ({fut_labels[hit_month-1]})</div>",
+                unsafe_allow_html=True
+            )
+        else:
+            shortfall = target - float(cumulative_fc[-1])
+            st.markdown(
+                f"<div style='background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.3);"
+                f"border-radius:10px;padding:0.8rem 1.2rem;font-size:0.88rem;color:#f87171'>"
+                f"❌ Cumulative forecast does not reach target within {forecast_period} months. "
+                f"Shortfall: <strong>${shortfall:,.0f}</strong></div>",
+                unsafe_allow_html=True
+            )
+
+        # ── Risk Factor Generator ─────────────────────
+        st.markdown("<div style='margin:2rem 0 0'></div>", unsafe_allow_html=True)
+        section("⚠️", "Risk Factor Analysis")
+
+        risks = []
+
+        # Risk 1: Revenue concentration
+        top_cat_s     = df.groupby("Category")["Sales"].sum()
+        top_cat_pct   = (top_cat_s.max() / top_cat_s.sum() * 100)
+        top_cat_name  = top_cat_s.idxmax()
+        if top_cat_pct > 55:
+            risks.append(("HIGH", "Revenue Concentration",
+                f"{top_cat_name} drives {top_cat_pct:.1f}% of total revenue — over-dependence on a single category creates vulnerability if demand shifts."))
+        elif top_cat_pct > 40:
+            risks.append(("MEDIUM", "Revenue Concentration",
+                f"{top_cat_name} drives {top_cat_pct:.1f}% of revenue — moderate concentration. Consider diversifying category mix."))
+
+        # Risk 2: Profit margin
+        overall_margin = (df["Profit"].sum() / df["Sales"].sum() * 100) if df["Sales"].sum() else 0
+        if overall_margin < 10:
+            risks.append(("HIGH", "Low Profit Margin",
+                f"Profit margin is {overall_margin:.1f}% — critically low. Any cost increase or discount strategy could push margins negative."))
+        elif overall_margin < 15:
+            risks.append(("MEDIUM", "Profit Margin Warning",
+                f"Profit margin is {overall_margin:.1f}% — below healthy threshold of 15%. Review pricing and cost structure."))
+
+        # Risk 3: Revenue decline trend
+        if len(monthly_revenue) >= 3:
+            last3 = monthly_revenue["Sales"].tail(3).values
+            if last3[2] < last3[1] < last3[0]:
+                risks.append(("HIGH", "3-Month Declining Trend",
+                    f"Revenue has declined 3 consecutive months: ${last3[0]:,.0f} → ${last3[1]:,.0f} → ${last3[2]:,.0f}. Forecast reliability is reduced."))
+            elif last3[2] < last3[0]:
+                risks.append(("MEDIUM", "Short-term Revenue Dip",
+                    f"Revenue in the most recent month (${last3[2]:,.0f}) is below 2 months ago (${last3[0]:,.0f}). Monitor closely."))
+
+        # Risk 4: Feasibility gap
+        if feasibility_score < 60:
+            risks.append(("HIGH", "Unrealistic Target",
+                f"Feasibility score of {feasibility_score:.1f}% indicates target is significantly above forecast. Risk of team burnout chasing an unachievable number."))
+        elif feasibility_score < 80:
+            risks.append(("MEDIUM", "Challenging Target",
+                f"Feasibility score of {feasibility_score:.1f}% means target requires above-trend performance. Achievable but requires focused effort."))
+
+        # Risk 5: Data quality
+        missing_pct_r = df.isnull().mean().mean() * 100
+        if missing_pct_r > 10:
+            risks.append(("MEDIUM", "Data Quality Risk",
+                f"{missing_pct_r:.1f}% of data has missing values. Forecast accuracy may be affected. Clean the dataset for better predictions."))
+
+        # Risk 6: Revenue volatility
+        rev_std  = monthly_revenue["Sales"].std()
+        rev_mean = monthly_revenue["Sales"].mean()
+        cv       = (rev_std / rev_mean * 100) if rev_mean else 0
+        if cv > 40:
+            risks.append(("HIGH", "High Revenue Volatility",
+                f"Revenue swings ±{rev_std:,.0f} monthly (CV={cv:.0f}%). High volatility makes forecasting unreliable — widen your planning range."))
+        elif cv > 20:
+            risks.append(("MEDIUM", "Moderate Volatility",
+                f"Revenue varies ±{rev_std:,.0f} monthly (CV={cv:.0f}%). Factor this uncertainty into target setting."))
+
+        if not risks:
+            st.markdown(
+                "<div style='background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);"
+                "border-radius:12px;padding:1rem 1.4rem;color:#34d399;font-size:0.9rem'>"
+                "✅ No significant risk factors detected. Your data quality, margin, and trend are all healthy.</div>",
+                unsafe_allow_html=True
+            )
+        else:
+            risk_html = ""
+            for level, title, desc in risks:
+                clr  = "#f87171" if level == "HIGH" else "#fbbf24"
+                bg   = "rgba(248,113,113,0.07)" if level == "HIGH" else "rgba(251,191,36,0.07)"
+                icon = "🔴" if level == "HIGH" else "🟡"
+                risk_html += (
+                    f"<div style='background:{bg};border:1px solid {clr}44;"
+                    f"border-left:3px solid {clr};border-radius:10px;"
+                    f"padding:0.9rem 1.2rem;margin-bottom:0.7rem'>"
+                    f"<div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.3rem'>"
+                    f"<span>{icon}</span>"
+                    f"<span style='font-family:Syne,sans-serif;font-size:0.85rem;font-weight:700;color:{clr}'>"
+                    f"{level} RISK — {title}</span></div>"
+                    f"<div style='font-size:0.83rem;color:var(--text);line-height:1.5'>{desc}</div>"
+                    f"</div>"
+                )
+            st.markdown(risk_html, unsafe_allow_html=True)
+            high_count = sum(1 for r in risks if r[0] == "HIGH")
+            med_count  = sum(1 for r in risks if r[0] == "MEDIUM")
+            st.markdown(
+                f"<div style='font-size:0.8rem;color:var(--muted);margin-top:0.5rem;text-align:right'>"
+                f"Found <span style='color:#f87171;font-weight:600'>{high_count} High</span> and "
+                f"<span style='color:#fbbf24;font-weight:600'>{med_count} Medium</span> risk factors</div>",
+                unsafe_allow_html=True
+            )
+
     else:
         st.markdown("""
         <div style="background:rgba(56,189,248,0.05);border:1px dashed rgba(56,189,248,0.2);
@@ -1236,15 +1515,137 @@ if page == "🏠  Dashboard":
 
     st.markdown('<div class="app-footer">Revenue Target Feasibility Analyzer · Built with Streamlit · Data processed locally</div>', unsafe_allow_html=True)
 
+# ══════════════════════════════════════════════════════════
+# PAGE 4 — USER ACTIVITY LOG
+# ══════════════════════════════════════════════════════════
+elif page == "👤  Activity Log":
+
+    st.markdown("""
+    <div class="animate-in" style="padding:1.5rem 0 0.5rem">
+      <div class="hero-title">User Activity<br>Log</div>
+      <p class="hero-sub">All users · Login history · Session tracking</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    current_user = st.session_state.get("username", "")
+    log          = load_activity()
+
+    if not log:
+        st.markdown(
+            "<div style='background:rgba(56,189,248,0.05);border:1px dashed rgba(56,189,248,0.2);"
+            "border-radius:12px;padding:1.2rem 1.5rem;color:#64748b;font-size:0.9rem'>"
+            "No activity recorded yet. Login activity will appear here.</div>",
+            unsafe_allow_html=True
+        )
+    else:
+        # ── Overall Stats ─────────────────────────────
+        total_users   = len(log)
+        total_logins  = sum(v.get("login_count", 0) for v in log.values())
+        most_active   = max(log, key=lambda u: log[u].get("login_count", 0))
+        last_active   = max(log, key=lambda u: log[u].get("last_login", ""))
+
+        section("📊", "Platform Overview")
+        ov1, ov2, ov3, ov4 = st.columns(4)
+        ov1.metric("Total Users",       str(total_users))
+        ov2.metric("Total Logins",      str(total_logins))
+        ov3.metric("Most Active User",  most_active)
+        ov4.metric("Last Active User",  last_active)
+
+        st.markdown("<div style='margin:1.5rem 0 0'></div>", unsafe_allow_html=True)
+
+        # ── All Users Table ───────────────────────────
+        section("👥", "All Users Activity")
+
+        table_html = (
+            "<div style='overflow-x:auto'>"
+            "<table style='width:100%;border-collapse:collapse;font-size:0.86rem'>"
+            "<thead>"
+            "<tr style='background:#1f2937'>"
+            "<th style='padding:0.7rem 1rem;text-align:left;color:#38bdf8;font-family:Syne,sans-serif;"
+            "font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid #1f2937'>#</th>"
+            "<th style='padding:0.7rem 1rem;text-align:left;color:#38bdf8;font-family:Syne,sans-serif;"
+            "font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid #1f2937'>Username</th>"
+            "<th style='padding:0.7rem 1rem;text-align:center;color:#38bdf8;font-family:Syne,sans-serif;"
+            "font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid #1f2937'>Total Logins</th>"
+            "<th style='padding:0.7rem 1rem;text-align:left;color:#38bdf8;font-family:Syne,sans-serif;"
+            "font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid #1f2937'>Last Login</th>"
+            "<th style='padding:0.7rem 1rem;text-align:center;color:#38bdf8;font-family:Syne,sans-serif;"
+            "font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid #1f2937'>Status</th>"
+            "</tr>"
+            "</thead><tbody>"
+        )
+
+        sorted_users = sorted(log.items(), key=lambda x: x[1].get("login_count", 0), reverse=True)
+        for i, (uname, udata) in enumerate(sorted_users):
+            is_current  = uname == current_user
+            row_bg      = "#111827" if i % 2 == 0 else "#0d1117"
+            badge_html  = (
+                "<span style='background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);"
+                "border-radius:6px;padding:0.15rem 0.6rem;font-size:0.72rem;color:#34d399'>● Online</span>"
+                if is_current else
+                "<span style='background:rgba(100,116,139,0.12);border:1px solid rgba(100,116,139,0.2);"
+                "border-radius:6px;padding:0.15rem 0.6rem;font-size:0.72rem;color:#64748b'>○ Offline</span>"
+            )
+            user_label = (
+                f"<strong style='color:#38bdf8'>{uname}</strong>"
+                f"<span style='margin-left:0.5rem;background:rgba(56,189,248,0.1);"
+                f"border:1px solid rgba(56,189,248,0.25);border-radius:4px;"
+                f"padding:0.1rem 0.4rem;font-size:0.7rem;color:#38bdf8'>You</span>"
+                if is_current else
+                f"<span style='color:#e2e8f0'>{uname}</span>"
+            )
+            logins     = udata.get("login_count", 0)
+            last_login = udata.get("last_login", "Never")
+            table_html += (
+                f"<tr style='background:{row_bg};border-bottom:1px solid #1f2937'>"
+                f"<td style='padding:0.75rem 1rem;color:#64748b'>{i+1}</td>"
+                f"<td style='padding:0.75rem 1rem'>{user_label}</td>"
+                f"<td style='padding:0.75rem 1rem;text-align:center;font-family:Syne,sans-serif;"
+                f"font-weight:700;color:#38bdf8'>{logins}</td>"
+                f"<td style='padding:0.75rem 1rem;color:#94a3b8'>{last_login}</td>"
+                f"<td style='padding:0.75rem 1rem;text-align:center'>{badge_html}</td>"
+                f"</tr>"
+            )
+
+        table_html += "</tbody></table></div>"
+        st.markdown(table_html, unsafe_allow_html=True)
+
+        # ── Current User Session History ──────────────
+        st.markdown("<div style='margin:2rem 0 0'></div>", unsafe_allow_html=True)
+        section("🕐", f"Your Recent Sessions — {current_user}")
+
+        if current_user in log:
+            sessions = log[current_user].get("sessions", [])[::-1]
+            if sessions:
+                session_html = ""
+                for i, s in enumerate(sessions):
+                    session_html += (
+                        f"<div style='display:flex;align-items:center;gap:1rem;"
+                        f"padding:0.7rem 1rem;background:var(--card);border:1px solid var(--border);"
+                        f"border-radius:10px;margin-bottom:0.5rem'>"
+                        f"<span style='font-family:Syne,sans-serif;font-size:0.75rem;font-weight:700;"
+                        f"color:var(--muted);min-width:30px'>#{len(sessions)-i}</span>"
+                        f"<span style='font-size:0.88rem;color:var(--text)'>{s}</span>"
+                        f"{'<span style=\"background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);border-radius:6px;padding:0.15rem 0.6rem;font-size:0.72rem;color:#34d399\">Current</span>' if i == 0 else ''}"
+                        f"</div>"
+                    )
+                st.markdown(session_html, unsafe_allow_html=True)
+            else:
+                st.info("No session history yet.")
+        else:
+            st.info("No session history yet.")
+
+    st.markdown('<div class="app-footer">Revenue Target Feasibility Analyzer · Built with Streamlit · Data processed locally</div>', unsafe_allow_html=True)
+
 
 # ══════════════════════════════════════════════════════════
 # PAGE 2 — EDA
 # ══════════════════════════════════════════════════════════
-elif page == "🔎  EDA":
+elif page == "📊  Sales Analytics":
 
     st.markdown("""
     <div class="animate-in" style="padding:1.5rem 0 0.5rem">
-      <div class="hero-title">Exploratory<br>Data Analysis</div>
+      <div class="hero-title">Sales<br>Analytics</div>
       <p class="hero-sub">Trends · Categories · Products · Correlations</p>
     </div>
     """, unsafe_allow_html=True)
